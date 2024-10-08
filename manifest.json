@@ -6,7 +6,12 @@
   "permissions": [
     "activeTab",
     "storage",
-    "scripting"
+    "scripting",
+    "commands",
+    "notifications",
+    "clipboardWrite",
+    "tabs",
+    "webNavigation"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -17,5 +22,27 @@
   "background": {
     "service_worker": "background.js"
   },
-  "options_page": "options.html"
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "get_timestamp": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+P",
+        "mac": "Command+Shift+P"
+      },
+      "description": "获取时间戳链接"
+    },
+    "get_screenshot": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "获取视频截图"
+    }
+  }
 }
