@@ -221,11 +221,37 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({success: true});
   } else if (request.action === "seekToTimestamp") {
     const success = seekToTimestamp(request.timestamp);
-    // 不再更新 URL，而是使用 history.pushState
     if (success) {
       history.pushState(null, '', request.url);
     }
     sendResponse({success: success});
+  } else if (request.action === "copyScreenshot") {
+    copyScreenshotToClipboard(request.dataUrl)
+      .then(() => sendResponse({success: true}))
+      .catch((error) => {
+        console.error('复制截图到剪贴板失败:', error);
+        sendResponse({success: false});
+      });
+    return true; // 保持消息通道开放以进行异步响应
   }
   return true; // 保持消息通道开放以进行异步响应
 });
+
+function copyScreenshotToClipboard(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      canvas.toBlob(blob => {
+        navigator.clipboard.write([
+          new ClipboardItem({'image/png': blob})
+        ]).then(resolve).catch(reject);
+      }, 'image/png');
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}

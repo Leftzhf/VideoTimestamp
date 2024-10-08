@@ -195,47 +195,52 @@ function handleResult(result, tabId) {
         console.error('发送消息时出错:', chrome.runtime.lastError);
       } else if (response && response.success) {
         console.log('时间戳链接已复制到剪贴板');
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icon.png',
-          title: '时间戳链接已复制',
-          message: '时间戳链接已成功复制到剪贴板'
-        });
+        showNotification('时间戳链接已复制', '时间戳链接已成功复制到剪贴板');
       } else {
         console.error('复制到剪贴板失败');
       }
     });
   } else if (result.type === "screenshot") {
-    const img = new Image();
-    img.onload = function() {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      canvas.getContext('2d').drawImage(img, 0, 0);
-      canvas.toBlob(blob => {
-        navigator.clipboard.write([
-          new ClipboardItem({'image/png': blob})
-        ]).then(() => {
-          console.log('截图已复制到剪贴板');
-          chrome.notifications.create({
-            type: 'basic',
-            iconUrl: 'icon.png',
-            title: '截图已复制',
-            message: '视频截图已成功复制到剪贴板'
-          });
-        }).catch(err => {
-          console.error('复制截图到剪贴板失败:', err);
-        });
-      }, 'image/png');
-    };
-    img.src = result.dataUrl;
+    chrome.tabs.sendMessage(tabId, {action: "copyScreenshot", dataUrl: result.dataUrl}, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('发送消息时出错:', chrome.runtime.lastError);
+        showNotification('复制失败', '无法将截图复制到剪贴板');
+      } else if (response && response.success) {
+        console.log('截图已复制到剪贴板');
+        showNotification('截图已复制', '视频截图已成功复制到剪贴板');
+      } else {
+        console.error('复制截图到剪贴板失败');
+        showNotification('复制失败', '无法将截图复制到剪贴板');
+      }
+    });
   } else if (result.type === "error") {
     console.error('错误:', result.message);
-    chrome.notifications.create({
-      type: 'basic',
-      iconUrl: 'icon.png',
-      title: '操作失败',
-      message: result.message
-    });
+    showNotification('操作失败', result.message);
   }
 }
+
+function copyScreenshotToClipboard(dataUrl, tabId) {
+  chrome.tabs.sendMessage(tabId, {action: "copyScreenshot", dataUrl: dataUrl}, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('发送消息时出错:', chrome.runtime.lastError);
+      showNotification('复制失败', '无法将截图复制到剪贴板');
+    } else if (response && response.success) {
+      console.log('截图已复制到剪贴板');
+      showNotification('截图已复制', '视频截图已成功复制到剪贴板');
+    } else {
+      console.error('复制截图到剪贴板失败');
+      showNotification('复制失败', '无法将截图复制到剪贴板');
+    }
+  });
+}
+
+function showNotification(title, message) {
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: 'icon.png',
+    title: title,
+    message: message
+  });
+}
+
+// ... 保留其他现有代码 ...
