@@ -1,5 +1,8 @@
 console.log('content.js 已加载');
 
+let isProcessingSeek = false;
+let lastSeekTimestamp = 0;
+
 function getVideoElement() {
   const bilibiliPlayer = document.querySelector('.bilibili-player-video video');
   if (bilibiliPlayer) {
@@ -80,6 +83,68 @@ function copyToClipboard(text) {
   document.body.removeChild(textArea);
 }
 
+function seekToTimestamp(timestamp) {
+  if (isProcessingSeek) return;
+  isProcessingSeek = true;
+
+  const video = getVideoElement();
+  if (!video) {
+    console.log('跳转失败: 未找到视频元素');
+    isProcessingSeek = false;
+    return;
+  }
+
+  if (timestamp) {
+    const targetTime = parseInt(timestamp);
+    if (Math.abs(video.currentTime - targetTime) > 1 && targetTime !== lastSeekTimestamp) {
+      video.currentTime = targetTime;
+      lastSeekTimestamp = targetTime;
+      console.log('视频已跳转到时间戳:', timestamp);
+    }
+  }
+  isProcessingSeek = false;
+}
+
+function checkUrlAndSeek() {
+  if (isProcessingSeek) return;
+
+  const url = new URL(window.location.href);
+  let timestamp;
+
+  if (url.hostname.includes('youtube.com')) {
+    timestamp = url.searchParams.get('t');
+    if (timestamp) {
+      timestamp = parseInt(timestamp.replace('s', ''));
+    }
+  } else if (url.hostname.includes('bilibili.com')) {
+    timestamp = url.searchParams.get('t');
+  } else if (url.hostname.includes('vimeo.com')) {
+    timestamp = url.hash.replace('#t=', '');
+    if (timestamp) {
+      timestamp = parseInt(timestamp.replace('s', ''));
+    }
+  } else {
+    timestamp = url.searchParams.get('t');
+  }
+
+  if (timestamp && timestamp !== lastSeekTimestamp) {
+    seekToTimestamp(timestamp);
+  }
+}
+
+// 监听 URL 变化
+let lastUrl = location.href; 
+new MutationObserver(() => {
+  const url = location.href;
+  if (url !== lastUrl) {
+    lastUrl = url;
+    setTimeout(checkUrlAndSeek, 500); // 添加延迟以确保视频元素已加载
+  }
+}).observe(document, {subtree: true, childList: true});
+
+// 页面加载时也检查一次
+window.addEventListener('load', () => setTimeout(checkUrlAndSeek, 1000));
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('content.js 收到消息:', request.action);
   if (request.action === "getTimestamp") {
@@ -88,6 +153,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse(captureScreenshot());
   } else if (request.action === "copyToClipboard") {
     copyToClipboard(request.text);
+    sendResponse({success: true});
+  } else if (request.action === "seekToTimestamp") {
+    if (request.timestamp !== lastSeekTimestamp) {
+      seekToTimestamp(request.timestamp);
+      // 如果需要，更新URL
+      if (window.location.href !== request.url) {
+        window.history.pushState({}, '', request.url);
+      }
+    }
     sendResponse({success: true});
   }
 });

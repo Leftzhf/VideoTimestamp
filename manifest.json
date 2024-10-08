@@ -9,7 +9,9 @@
     "scripting",
     "commands",
     "notifications",
-    "clipboardWrite"
+    "clipboardWrite",
+    "tabs",
+    "webNavigation"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -42,11 +44,5 @@
       },
       "description": "获取视频截图"
     }
-  },
-  "web_accessible_resources": [
-    {
-      "resources": ["screenshot.html", "screenshot.js"],
-      "matches": ["<all_urls>"]
-    }
-  ]
+  }
 }
