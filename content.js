@@ -3,27 +3,80 @@ console.log('content.js 已加载');
 let isProcessingSeek = false;
 let lastSeekTimestamp = 0;
 
-function getVideoElement() {
-  const bilibiliPlayer = document.querySelector('.bilibili-player-video video');
-  if (bilibiliPlayer) {
-    console.log('找到Bilibili播放器');
-    return bilibiliPlayer;
-  }
-  
-  const baiduPlayer = document.querySelector('#video-wrap video');
-  if (baiduPlayer) {
-    console.log('找到百度网盘播放器');
-    return baiduPlayer;
-  }
-  
-  const generalVideo = document.querySelector('video');
-  if (generalVideo) {
-    console.log('找到普通视频元素');
-    return generalVideo;
-  }
-  
-  console.log('未找到视频元素');
+// 视频平台处理器
+const platformHandlers = {
+  bilibili: {
+    getVideoElement: () => {
+      const video = document.querySelector('.bilibili-player-video video') || 
+                    document.querySelector('#bilibili-player video') ||
+                    document.querySelector('#bofqi video');
+      if (video) console.log('找到Bilibili播放器');
+      return video;
+    },
+    generateTimestampLink: (video, timestamp, currentUrl) => {
+      currentUrl.searchParams.set('t', Math.floor(video.currentTime));
+      return `[${timestamp}](${currentUrl.toString()})`;
+    },
+    seekToTimestamp: (video, targetTime) => {
+      video.currentTime = targetTime;
+      // 阻止默认的页面跳转
+      history.pushState(null, '', window.location.href);
+    }
+  },
+  baiduPan: {
+    getVideoElement: () => {
+      const video = document.querySelector('#video-wrap video') || 
+                    document.querySelector('.vjs-tech');
+      if (video) console.log('找到百度网盘播放器');
+      return video;
+    },
+    generateTimestampLink: (video, timestamp, currentUrl) => {
+      currentUrl.searchParams.set('t', Math.floor(video.currentTime));
+      const specialParam = currentUrl.searchParams.get('_t');
+      if (specialParam) {
+        currentUrl.searchParams.set('_t', specialParam);
+      }
+      return `[${timestamp}](${currentUrl.toString()})`;
+    },
+    seekToTimestamp: (video, targetTime) => {
+      video.currentTime = targetTime;
+      let attempts = 0;
+      const maxAttempts = 10;
+      const checkAndAdjust = () => {
+        if (Math.abs(video.currentTime - targetTime) > 1 && attempts < maxAttempts) {
+          video.currentTime = targetTime;
+          attempts++;
+          setTimeout(checkAndAdjust, 200);
+        } else if (attempts >= maxAttempts) {
+          console.error('无法精确跳转到指定时间戳');
+        }
+      };
+      checkAndAdjust();
+      // 阻止默认的页面跳转
+      history.pushState(null, '', window.location.href);
+    }
+  },
+  // 可以添加其他平台的处理器
+};
+
+function getPlatformHandler() {
+  const hostname = window.location.hostname;
+  if (hostname.includes('bilibili.com')) return platformHandlers.bilibili;
+  if (hostname.includes('pan.baidu.com')) return platformHandlers.baiduPan;
+  // 可以添加其他平台的判断
   return null;
+}
+
+function getVideoElement() {
+  const handler = getPlatformHandler();
+  if (handler) {
+    const video = handler.getVideoElement();
+    if (video) return video;
+  }
+  // 如果特定平台的处理器没有找到视频元素，尝试通用方法
+  const video = document.querySelector('video');
+  if (video) console.log('找到普通视频元素');
+  return video;
 }
 
 function getTimestamp() {
@@ -49,25 +102,16 @@ function generateTimestampLink() {
   
   const timestamp = getTimestamp();
   const currentUrl = new URL(window.location.href);
-  const currentTime = Math.floor(video.currentTime);
   
-  if (currentUrl.hostname.includes('youtube.com')) {
-    currentUrl.searchParams.set('t', currentTime + 's');
-  } else if (currentUrl.hostname.includes('bilibili.com')) {
-    currentUrl.searchParams.set('t', currentTime);
-  } else if (currentUrl.hostname.includes('vimeo.com')) {
-    currentUrl.hash = '#t=' + currentTime + 's';
-  } else if (currentUrl.hostname.includes('pan.baidu.com')) {
-    currentUrl.searchParams.set('t', currentTime);
-    // 百度网盘的视频页面URL中包含一个特殊的参数，我们需要保留它
-    const specialParam = currentUrl.searchParams.get('_t');
-    if (specialParam) {
-      currentUrl.searchParams.set('_t', specialParam);
-    }
-  } else {
-    currentUrl.searchParams.set('t', currentTime);
+  const handler = getPlatformHandler();
+  if (handler) {
+    const link = handler.generateTimestampLink(video, timestamp, currentUrl);
+    console.log('生成的时间戳链接:', link);
+    return {type: "timestamp", link: link};
   }
   
+  // 默认处理
+  currentUrl.searchParams.set('t', Math.floor(video.currentTime));
   const link = `[${timestamp}](${currentUrl.toString()})`;
   console.log('生成的时间戳链接:', link);
   return {type: "timestamp", link: link};
@@ -98,7 +142,7 @@ function copyToClipboard(text) {
 }
 
 function seekToTimestamp(timestamp) {
-  if (isProcessingSeek) return;
+  if (isProcessingSeek) return false;
   isProcessingSeek = true;
 
   const video = getVideoElement();
@@ -110,27 +154,16 @@ function seekToTimestamp(timestamp) {
 
   if (timestamp) {
     const targetTime = parseInt(timestamp);
-    if (Math.abs(video.currentTime - targetTime) > 1 && targetTime !== lastSeekTimestamp) {
+    const handler = getPlatformHandler();
+    if (handler) {
+      handler.seekToTimestamp(video, targetTime);
+    } else {
       video.currentTime = targetTime;
-      lastSeekTimestamp = targetTime;
-      console.log('视频已跳转到时间戳:', timestamp);
-      
-      // 对于百度网盘，我们需要额外的操作来确保跳转生效
-      if (window.location.hostname.includes('pan.baidu.com')) {
-        let attempts = 0;
-        const maxAttempts = 10;
-        const checkAndAdjust = () => {
-          if (Math.abs(video.currentTime - targetTime) > 1 && attempts < maxAttempts) {
-            video.currentTime = targetTime;
-            attempts++;
-            setTimeout(checkAndAdjust, 200);
-          } else if (attempts >= maxAttempts) {
-            console.error('无法精确跳转到指定时间戳');
-          }
-        };
-        checkAndAdjust();
-      }
     }
+    lastSeekTimestamp = targetTime;
+    console.log('视频已跳转到时间戳:', timestamp);
+    // 阻止默认的页面跳转
+    history.pushState(null, '', window.location.href);
   }
   isProcessingSeek = false;
   return true;
@@ -142,20 +175,19 @@ function checkUrlAndSeek() {
   const url = new URL(window.location.href);
   let timestamp;
 
-  if (url.hostname.includes('youtube.com')) {
+  const handler = getPlatformHandler();
+  if (handler) {
+    timestamp = url.searchParams.get('t');
+  } else if (url.hostname.includes('youtube.com')) {
     timestamp = url.searchParams.get('t');
     if (timestamp) {
       timestamp = parseInt(timestamp.replace('s', ''));
     }
-  } else if (url.hostname.includes('bilibili.com')) {
-    timestamp = url.searchParams.get('t');
   } else if (url.hostname.includes('vimeo.com')) {
     timestamp = url.hash.replace('#t=', '');
     if (timestamp) {
       timestamp = parseInt(timestamp.replace('s', ''));
     }
-  } else if (url.hostname.includes('pan.baidu.com')) {
-    timestamp = url.searchParams.get('t');
   } else {
     timestamp = url.searchParams.get('t');
   }
@@ -189,9 +221,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({success: true});
   } else if (request.action === "seekToTimestamp") {
     const success = seekToTimestamp(request.timestamp);
-    // 如果需要，更新URL
-    if (success && window.location.href !== request.url) {
-      window.history.pushState({}, '', request.url);
+    // 不再更新 URL，而是使用 history.pushState
+    if (success) {
+      history.pushState(null, '', request.url);
     }
     sendResponse({success: success});
   }
