@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "视频时间戳和截图工具",
+  "version": "1.0",
+  "description": "获取视频时间戳链接和截图的Chrome扩展",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html"
+}

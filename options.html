@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>视频时间戳和截图工具 - 选项</title>
+  <style>
+    body { width: 300px; padding: 10px; }
+    label { display: block; margin: 10px 0; }
+    .shortcut-input { 
+      display: inline-block; 
+      width: 200px; 
+      height: 30px; 
+      border: 1px solid #ccc; 
+      padding: 5px;
+      margin-left: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h2>快捷键设置</h2>
+  <label>
+    获取时间戳链接:
+    <div id="timestampShortcut" class="shortcut-input" tabindex="0">点击此处设置快捷键</div>
+  </label>
+  <label>
+    获取视频截图:
+    <div id="screenshotShortcut" class="shortcut-input" tabindex="0">点击此处设置快捷键</div>
+  </label>
+  <button id="save">保存</button>
+  <script src="options.js"></script>
+</body>
+</html>
