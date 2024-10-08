@@ -10,6 +10,12 @@ function getVideoElement() {
     return bilibiliPlayer;
   }
   
+  const baiduPlayer = document.querySelector('#video-wrap video');
+  if (baiduPlayer) {
+    console.log('找到百度网盘播放器');
+    return baiduPlayer;
+  }
+  
   const generalVideo = document.querySelector('video');
   if (generalVideo) {
     console.log('找到普通视频元素');
@@ -28,9 +34,10 @@ function getTimestamp() {
   }
   
   const currentTime = video.currentTime;
-  const minutes = Math.floor(currentTime / 60);
+  const hours = Math.floor(currentTime / 3600);
+  const minutes = Math.floor((currentTime % 3600) / 60);
   const seconds = Math.floor(currentTime % 60);
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
 function generateTimestampLink() {
@@ -50,6 +57,13 @@ function generateTimestampLink() {
     currentUrl.searchParams.set('t', currentTime);
   } else if (currentUrl.hostname.includes('vimeo.com')) {
     currentUrl.hash = '#t=' + currentTime + 's';
+  } else if (currentUrl.hostname.includes('pan.baidu.com')) {
+    currentUrl.searchParams.set('t', currentTime);
+    // 百度网盘的视频页面URL中包含一个特殊的参数，我们需要保留它
+    const specialParam = currentUrl.searchParams.get('_t');
+    if (specialParam) {
+      currentUrl.searchParams.set('_t', specialParam);
+    }
   } else {
     currentUrl.searchParams.set('t', currentTime);
   }
@@ -91,7 +105,7 @@ function seekToTimestamp(timestamp) {
   if (!video) {
     console.log('跳转失败: 未找到视频元素');
     isProcessingSeek = false;
-    return;
+    return false;
   }
 
   if (timestamp) {
@@ -100,9 +114,26 @@ function seekToTimestamp(timestamp) {
       video.currentTime = targetTime;
       lastSeekTimestamp = targetTime;
       console.log('视频已跳转到时间戳:', timestamp);
+      
+      // 对于百度网盘，我们需要额外的操作来确保跳转生效
+      if (window.location.hostname.includes('pan.baidu.com')) {
+        let attempts = 0;
+        const maxAttempts = 10;
+        const checkAndAdjust = () => {
+          if (Math.abs(video.currentTime - targetTime) > 1 && attempts < maxAttempts) {
+            video.currentTime = targetTime;
+            attempts++;
+            setTimeout(checkAndAdjust, 200);
+          } else if (attempts >= maxAttempts) {
+            console.error('无法精确跳转到指定时间戳');
+          }
+        };
+        checkAndAdjust();
+      }
     }
   }
   isProcessingSeek = false;
+  return true;
 }
 
 function checkUrlAndSeek() {
@@ -123,6 +154,8 @@ function checkUrlAndSeek() {
     if (timestamp) {
       timestamp = parseInt(timestamp.replace('s', ''));
     }
+  } else if (url.hostname.includes('pan.baidu.com')) {
+    timestamp = url.searchParams.get('t');
   } else {
     timestamp = url.searchParams.get('t');
   }
@@ -155,13 +188,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     copyToClipboard(request.text);
     sendResponse({success: true});
   } else if (request.action === "seekToTimestamp") {
-    if (request.timestamp !== lastSeekTimestamp) {
-      seekToTimestamp(request.timestamp);
-      // 如果需要，更新URL
-      if (window.location.href !== request.url) {
-        window.history.pushState({}, '', request.url);
-      }
+    const success = seekToTimestamp(request.timestamp);
+    // 如果需要，更新URL
+    if (success && window.location.href !== request.url) {
+      window.history.pushState({}, '', request.url);
     }
-    sendResponse({success: true});
+    sendResponse({success: success});
   }
+  return true; // 保持消息通道开放以进行异步响应
 });

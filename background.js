@@ -19,7 +19,8 @@ function updateCurrentVideoTab(tabId, url) {
 function isVideoUrl(url) {
   return url.includes('youtube.com/watch') || 
          url.includes('bilibili.com/video') || 
-         url.includes('vimeo.com');
+         url.includes('vimeo.com') ||
+         (url.includes('pan.baidu.com/pfile/video') && url.includes('path='));
 }
 
 // 从URL中提取时间戳
@@ -31,6 +32,8 @@ function extractTimestamp(url) {
     return parsedUrl.searchParams.get('t');
   } else if (parsedUrl.hostname.includes('vimeo.com')) {
     return parsedUrl.hash.replace('#t=', '');
+  } else if (parsedUrl.hostname.includes('pan.baidu.com')) {
+    return parsedUrl.searchParams.get('t');
   }
   return null;
 }
@@ -103,11 +106,21 @@ function redirectToExistingTab(url, timestamp, sourceTabId) {
           action: "seekToTimestamp",
           timestamp: timestamp,
           url: url
+        }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('发送消息时出错:', chrome.runtime.lastError);
+          } else if (response && response.success) {
+            console.log('成功跳转到时间戳');
+          } else {
+            console.error('跳转到时间戳失败');
+          }
         });
         // 关闭源标签页
-        chrome.tabs.remove(sourceTabId);
+        if (sourceTabId !== matchingTabId) {
+          chrome.tabs.remove(sourceTabId);
+        }
         isProcessing = false;
-      }, 500);
+      }, 1000);
     });
   } else {
     // 如果是当前标签页或没有找到匹配的标签页，直接在当前标签页中处理
@@ -117,6 +130,7 @@ function redirectToExistingTab(url, timestamp, sourceTabId) {
       url: url
     }, (response) => {
       if (chrome.runtime.lastError) {
+        console.error('发送消息时出错:', chrome.runtime.lastError);
         // 如果发送消息失败，可能是因为content script还没有加载，尝试更新标签页
         chrome.tabs.update(sourceTabId, {url: url}, () => {
           setTimeout(() => {
@@ -126,9 +140,13 @@ function redirectToExistingTab(url, timestamp, sourceTabId) {
               url: url
             });
             isProcessing = false;
-          }, 500);
+          }, 1000);
         });
+      } else if (response && response.success) {
+        console.log('成功跳转到时间戳');
+        isProcessing = false;
       } else {
+        console.error('跳转到时间戳失败');
         isProcessing = false;
       }
     });
@@ -140,7 +158,11 @@ function isSimilarVideoUrl(url1, url2) {
   const parsedUrl1 = new URL(url1);
   const parsedUrl2 = new URL(url2);
   
-  if (parsedUrl1.hostname.includes('youtube.com') && parsedUrl2.hostname.includes('youtube.com')) {
+  if (parsedUrl1.hostname.includes('pan.baidu.com') && parsedUrl2.hostname.includes('pan.baidu.com')) {
+    // 对于百度网盘，我们比较 path 参数和 from 参数
+    return parsedUrl1.searchParams.get('path') === parsedUrl2.searchParams.get('path') &&
+           parsedUrl1.searchParams.get('from') === parsedUrl2.searchParams.get('from');
+  } else if (parsedUrl1.hostname.includes('youtube.com') && parsedUrl2.hostname.includes('youtube.com')) {
     return parsedUrl1.searchParams.get('v') === parsedUrl2.searchParams.get('v');
   } else if (parsedUrl1.hostname.includes('bilibili.com') && parsedUrl2.hostname.includes('bilibili.com')) {
     return parsedUrl1.pathname === parsedUrl2.pathname;
@@ -195,7 +217,12 @@ function handleResult(result, tabId) {
       }
     });
   } else if (result.type === "screenshot") {
-    // ... 处理截图的代码 ...
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icon.png',
+      title: '截图已复制',
+      message: '视频截图已成功复制到剪贴板'
+    });
   } else if (result.type === "error") {
     console.error('错误:', result.message);
     chrome.notifications.create({
