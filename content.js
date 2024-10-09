@@ -210,26 +210,76 @@ new MutationObserver(() => {
 // 页面加载时也检查一次
 window.addEventListener('load', () => setTimeout(checkUrlAndSeek, 1000));
 
+// 在文件开头添加这个函数
+function showPageNotification(message) {
+  const notification = document.createElement('div');
+  notification.textContent = message;
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background-color: #4CAF50;
+    color: white;
+    padding: 16px;
+    border-radius: 4px;
+    z-index: 9999;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  `;
+  document.body.appendChild(notification);
+  setTimeout(() => {
+    notification.style.opacity = '0';
+    notification.style.transition = 'opacity 0.5s';
+    setTimeout(() => document.body.removeChild(notification), 500);
+  }, 3000);
+}
+
+// 修改 handleShortcut 函数
+function handleShortcut(action) {
+  if (action === "getTimestamp") {
+    const result = generateTimestampLink();
+    if (result.type === "timestamp") {
+      const timestamp = result.link.match(/\[(.*?)\]/)[1]; // 从链接中提取时间戳
+      showPageNotification(`(${timestamp}) 内容已复制到剪贴板`);
+    } else {
+      showPageNotification('获取时间戳失败');
+    }
+    return result;
+  } else if (action === "getScreenshot") {
+    const result = captureScreenshot();
+    showPageNotification(result.type === "screenshot" ? '截图已成功捕获!' : '获取截图失败');
+    return result;
+  }
+}
+
+// 修改消息监听器
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('content.js 收到消息:', request.action);
-  if (request.action === "getTimestamp") {
-    sendResponse(generateTimestampLink());
-  } else if (request.action === "getScreenshot") {
-    sendResponse(captureScreenshot());
+  let result;
+  if (request.action === "getTimestamp" || request.action === "getScreenshot") {
+    result = handleShortcut(request.action);
+    console.log('handleShortcut 结果:', result);
+    sendResponse(result);
   } else if (request.action === "copyToClipboard") {
     copyToClipboard(request.text);
+    const timestamp = request.text.match(/\[(.*?)\]/)[1]; // 从链接中提取时间戳
+    showPageNotification(`(${timestamp}) 内容已复制到剪贴板`);
     sendResponse({success: true});
   } else if (request.action === "seekToTimestamp") {
     const success = seekToTimestamp(request.timestamp);
     if (success) {
       history.pushState(null, '', request.url);
+      showPageNotification('已跳转到指定时间戳');
     }
     sendResponse({success: success});
   } else if (request.action === "copyScreenshot") {
     copyScreenshotToClipboard(request.dataUrl)
-      .then(() => sendResponse({success: true}))
+      .then(() => {
+        showPageNotification('截图已复制到剪贴板');
+        sendResponse({success: true});
+      })
       .catch((error) => {
         console.error('复制截图到剪贴板失败:', error);
+        showPageNotification('复制截图失败');
         sendResponse({success: false});
       });
     return true; // 保持消息通道开放以进行异步响应

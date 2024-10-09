@@ -163,84 +163,67 @@ function isSimilarVideoUrl(url1, url2) {
 
 // 保留原有的其他功能代码...
 
-chrome.commands.onCommand.addListener((command) => {
-  console.log('收到命令:', command);
-  if (command === 'get_timestamp' || command === 'get_screenshot') {
-    executeContentScript(command === 'get_timestamp' ? "getTimestamp" : "getScreenshot");
-  }
-});
-
-function executeContentScript(action) {
-  chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-    if (tabs[0]) {
-      console.log('执行内容脚本，动作:', action);
-      chrome.tabs.sendMessage(tabs[0].id, {action: action}, (response) => {
-        if (chrome.runtime.lastError) {
-          console.error('执行脚本时出错:', chrome.runtime.lastError);
-        } else if (response) {
-          handleResult(response, tabs[0].id);
-        }
-      });
-    } else {
-      console.error('未找到活动标签页');
-    }
-  });
-}
-
-function handleResult(result, tabId) {
-  console.log('处理结果:', result);
-  if (result.type === "timestamp") {
-    chrome.tabs.sendMessage(tabId, {action: "copyToClipboard", text: result.link}, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('发送消息时出错:', chrome.runtime.lastError);
-      } else if (response && response.success) {
-        console.log('时间戳链接已复制到剪贴板');
-        showNotification('时间戳链接已复制', '时间戳链接已成功复制到剪贴板');
-      } else {
-        console.error('复制到剪贴板失败');
-      }
-    });
-  } else if (result.type === "screenshot") {
-    chrome.tabs.sendMessage(tabId, {action: "copyScreenshot", dataUrl: result.dataUrl}, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('发送消息时出错:', chrome.runtime.lastError);
-        showNotification('复制失败', '无法将截图复制到剪贴板');
-      } else if (response && response.success) {
-        console.log('截图已复制到剪贴板');
-        showNotification('截图已复制', '视频截图已成功复制到剪贴板');
-      } else {
-        console.error('复制截图到剪贴板失败');
-        showNotification('复制失败', '无法将截图复制到剪贴板');
-      }
-    });
-  } else if (result.type === "error") {
-    console.error('错误:', result.message);
-    showNotification('操作失败', result.message);
-  }
-}
-
-function copyScreenshotToClipboard(dataUrl, tabId) {
-  chrome.tabs.sendMessage(tabId, {action: "copyScreenshot", dataUrl: dataUrl}, (response) => {
-    if (chrome.runtime.lastError) {
-      console.error('发送消息时出错:', chrome.runtime.lastError);
-      showNotification('复制失败', '无法将截图复制到剪贴板');
-    } else if (response && response.success) {
-      console.log('截图已复制到剪贴板');
-      showNotification('截图已复制', '视频截图已成功复制到剪贴板');
-    } else {
-      console.error('复制截图到剪贴板失败');
-      showNotification('复制失败', '无法将截图复制到剪贴板');
-    }
-  });
-}
-
-function showNotification(title, message) {
+// 在文件开头添加这个函数
+function showNotification(message) {
+  console.log('尝试显示通知:', message);
   chrome.notifications.create({
     type: 'basic',
     iconUrl: 'icon.png',
-    title: title,
+    title: '视频时间戳捕获',
     message: message
+  }, (notificationId) => {
+    if (chrome.runtime.lastError) {
+      console.error('显示通知失败:', chrome.runtime.lastError);
+    } else {
+      console.log('通知已显示, ID:', notificationId);
+    }
   });
 }
 
+// 修改 chrome.commands.onCommand 监听器
+chrome.commands.onCommand.addListener((command) => {
+  console.log('收到命令:', command);
+  if (command === 'get_timestamp' || command === 'get_screenshot') {
+    chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
+      if (tabs[0]) {
+        console.log('向内容脚本发送消息:', command);
+        chrome.tabs.sendMessage(tabs[0].id, {
+          action: command === 'get_timestamp' ? "getTimestamp" : "getScreenshot"
+        }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('发送消息时出错:', chrome.runtime.lastError);
+            showNotification('操作失败: ' + chrome.runtime.lastError.message);
+          } else if (response) {
+            console.log('收到内容脚本响应:', response);
+            handleResult(response, tabs[0].id);
+          }
+        });
+      } else {
+        console.error('未找到活动标签页');
+        showNotification('未找到活动标签页');
+      }
+    });
+  }
+});
+
+// 修改 handleResult 函数
+function handleResult(result, tabId) {
+  console.log('处理结果:', result);
+  if (result.type === "timestamp") {
+    chrome.tabs.sendMessage(tabId, {action: "copyToClipboard", text: result.link});
+  } else if (result.type === "screenshot") {
+    chrome.tabs.sendMessage(tabId, {action: "copyScreenshot", dataUrl: result.dataUrl});
+  } else if (result.type === "error") {
+    chrome.tabs.sendMessage(tabId, {action: "showNotification", message: '操作失败: ' + result.message});
+  }
+}
+
+// 添加一个新的消息监听器
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'showNotification') {
+    showNotification(request.message);
+  }
+});
+
+// ... 保留其他现有代码 ...
 // ... 保留其他现有代码 ...
