@@ -237,7 +237,12 @@ function showPageNotification(message) {
 function handleShortcut(action) {
   if (action === "getTimestamp") {
     const result = generateTimestampLink();
-    showPageNotification(result.type === "timestamp" ? '时间戳已成功捕获!' : '获取时间戳失败');
+    if (result.type === "timestamp") {
+      const timestamp = result.link.match(/\[(.*?)\]/)[1]; // 从链接中提取时间戳
+      showPageNotification(`(${timestamp}) 内容已复制到剪贴板`);
+    } else {
+      showPageNotification('获取时间戳失败');
+    }
     return result;
   } else if (action === "getScreenshot") {
     const result = captureScreenshot();
@@ -256,7 +261,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse(result);
   } else if (request.action === "copyToClipboard") {
     copyToClipboard(request.text);
-    showPageNotification('内容已复制到剪贴板');
+    const timestamp = request.text.match(/\[(.*?)\]/)[1]; // 从链接中提取时间戳
+    showPageNotification(`(${timestamp}) 内容已复制到剪贴板`);
     sendResponse({success: true});
   } else if (request.action === "seekToTimestamp") {
     const success = seekToTimestamp(request.timestamp);
