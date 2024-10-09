@@ -8,7 +8,6 @@
     "storage",
     "scripting",
     "commands",
-    "notifications",
     "clipboardWrite",
     "tabs",
     "webNavigation"
