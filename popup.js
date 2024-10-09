@@ -24,7 +24,7 @@ function handleResult(result, tabId) {
     chrome.tabs.sendMessage(tabId, {action: "copyToClipboard", text: result.link}, (response) => {
       if (response && response.success) {
         document.getElementById('result').innerHTML = `
-          <p>时间戳链接已复制到剪贴板:</p>
+          <p style="color: green;">时间戳链接已成功复制到剪贴板</p>
           <pre>${result.link}</pre>
         `;
       } else {
@@ -45,7 +45,7 @@ function handleResult(result, tabId) {
           new ClipboardItem({'image/png': blob})
         ]).then(() => {
           document.getElementById('result').innerHTML = `
-            <p>截图已复制到剪贴板</p>
+            <p style="color: green;">截图已成功复制到剪贴板</p>
           `;
         }).catch(err => {
           console.error('复制图片到剪贴板失败:', err);

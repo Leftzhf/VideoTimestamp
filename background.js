@@ -19,7 +19,8 @@ function updateCurrentVideoTab(tabId, url) {
 function isVideoUrl(url) {
   return url.includes('youtube.com/watch') || 
          url.includes('bilibili.com/video') || 
-         url.includes('vimeo.com');
+         url.includes('vimeo.com') ||
+         (url.includes('pan.baidu.com/pfile/video') && url.includes('path='));
 }
 
 // 从URL中提取时间戳
@@ -31,6 +32,8 @@ function extractTimestamp(url) {
     return parsedUrl.searchParams.get('t');
   } else if (parsedUrl.hostname.includes('vimeo.com')) {
     return parsedUrl.hash.replace('#t=', '');
+  } else if (parsedUrl.hostname.includes('pan.baidu.com')) {
+    return parsedUrl.searchParams.get('t');
   }
   return null;
 }
@@ -80,70 +83,78 @@ function handleNavigation(details) {
 }
 
 function redirectToExistingTab(url, timestamp, sourceTabId) {
-  if (isProcessing || url === lastProcessedUrl) return;
+  if (isProcessing) return;
   isProcessing = true;
-  lastProcessedUrl = url;
 
-  // 检查是否有匹配的视频标签页
-  let matchingTabId = null;
-  for (let [existingTabId, existingUrl] of Object.entries(currentVideoTabs)) {
-    if (isSimilarVideoUrl(existingUrl, url)) {
-      matchingTabId = parseInt(existingTabId);
-      break;
-    }
-  }
-
-  if (matchingTabId !== null && matchingTabId !== sourceTabId) {
-    console.log('找到匹配的视频标签页:', matchingTabId);
-    // 更新现有标签页
-    chrome.tabs.update(matchingTabId, {active: true}, () => {
-      // 在标签页更新后发送消息以跳转到时间戳
-      setTimeout(() => {
-        chrome.tabs.sendMessage(matchingTabId, {
-          action: "seekToTimestamp",
-          timestamp: timestamp,
-          url: url
-        });
-        // 关闭源标签页
-        chrome.tabs.remove(sourceTabId);
-        isProcessing = false;
-      }, 500);
-    });
-  } else {
-    // 如果是当前标签页或没有找到匹配的标签页，直接在当前标签页中处理
-    chrome.tabs.sendMessage(sourceTabId, {
-      action: "seekToTimestamp",
-      timestamp: timestamp,
-      url: url
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        // 如果发送消息失败，可能是因为content script还没有加载，尝试更新标签页
-        chrome.tabs.update(sourceTabId, {url: url}, () => {
-          setTimeout(() => {
-            chrome.tabs.sendMessage(sourceTabId, {
-              action: "seekToTimestamp",
-              timestamp: timestamp,
-              url: url
-            });
-            isProcessing = false;
-          }, 500);
-        });
-      } else {
-        isProcessing = false;
+  chrome.tabs.query({}, (tabs) => {
+    let matchingTabId = null;
+    for (let tab of tabs) {
+      if (isSimilarVideoUrl(tab.url, url)) {
+        matchingTabId = tab.id;
+        break;
       }
-    });
-  }
+    }
+
+    if (matchingTabId !== null) {
+      console.log('找到匹配的视频标签页:', matchingTabId);
+      // 更新现有标签页
+      chrome.tabs.update(matchingTabId, {active: true}, () => {
+        sendSeekMessage(matchingTabId, timestamp, url, sourceTabId);
+      });
+    } else {
+      // 如果没有找到匹配的标签页，在当前标签页中处理
+      sendSeekMessage(sourceTabId, timestamp, url);
+    }
+  });
 }
 
-// 检查两个视频URL是否相似
+function sendSeekMessage(tabId, timestamp, url, sourceTabId = null) {
+  chrome.tabs.sendMessage(tabId, {
+    action: "seekToTimestamp",
+    timestamp: timestamp,
+    url: url
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('发送消息时出错:', chrome.runtime.lastError);
+      // 如果发送消息失败，可能是因为content script还没有加载，尝试更新标签页
+      chrome.tabs.update(tabId, {url: url}, () => {
+        setTimeout(() => {
+          chrome.tabs.sendMessage(tabId, {
+            action: "seekToTimestamp",
+            timestamp: timestamp,
+            url: url
+          });
+          isProcessing = false;
+        }, 1000);
+      });
+    } else if (response && response.success) {
+      console.log('成功跳转到时间戳');
+      if (sourceTabId && sourceTabId !== tabId) {
+        chrome.tabs.remove(sourceTabId);
+      }
+      isProcessing = false;
+    } else {
+      console.error('跳转到时间戳失败');
+      isProcessing = false;
+    }
+  });
+}
+
 function isSimilarVideoUrl(url1, url2) {
   const parsedUrl1 = new URL(url1);
   const parsedUrl2 = new URL(url2);
   
-  if (parsedUrl1.hostname.includes('youtube.com') && parsedUrl2.hostname.includes('youtube.com')) {
-    return parsedUrl1.searchParams.get('v') === parsedUrl2.searchParams.get('v');
+  if (parsedUrl1.hostname.includes('pan.baidu.com') && parsedUrl2.hostname.includes('pan.baidu.com')) {
+    // 对于百度网盘，我们只比较 path 参数
+    return parsedUrl1.searchParams.get('path') === parsedUrl2.searchParams.get('path');
   } else if (parsedUrl1.hostname.includes('bilibili.com') && parsedUrl2.hostname.includes('bilibili.com')) {
-    return parsedUrl1.pathname === parsedUrl2.pathname;
+    // 对于B站，我们比较视频ID
+    const biliRegex = /\/video\/([^/?]+)/;
+    const match1 = parsedUrl1.pathname.match(biliRegex);
+    const match2 = parsedUrl2.pathname.match(biliRegex);
+    return match1 && match2 && match1[1] === match2[1];
+  } else if (parsedUrl1.hostname.includes('youtube.com') && parsedUrl2.hostname.includes('youtube.com')) {
+    return parsedUrl1.searchParams.get('v') === parsedUrl2.searchParams.get('v');
   } else if (parsedUrl1.hostname.includes('vimeo.com') && parsedUrl2.hostname.includes('vimeo.com')) {
     return parsedUrl1.pathname === parsedUrl2.pathname;
   }
@@ -184,25 +195,52 @@ function handleResult(result, tabId) {
         console.error('发送消息时出错:', chrome.runtime.lastError);
       } else if (response && response.success) {
         console.log('时间戳链接已复制到剪贴板');
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icon.png',
-          title: '时间戳链接已复制',
-          message: '时间戳链接已成功复制到剪贴板'
-        });
+        showNotification('时间戳链接已复制', '时间戳链接已成功复制到剪贴板');
       } else {
         console.error('复制到剪贴板失败');
       }
     });
   } else if (result.type === "screenshot") {
-    // ... 处理截图的代码 ...
+    chrome.tabs.sendMessage(tabId, {action: "copyScreenshot", dataUrl: result.dataUrl}, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('发送消息时出错:', chrome.runtime.lastError);
+        showNotification('复制失败', '无法将截图复制到剪贴板');
+      } else if (response && response.success) {
+        console.log('截图已复制到剪贴板');
+        showNotification('截图已复制', '视频截图已成功复制到剪贴板');
+      } else {
+        console.error('复制截图到剪贴板失败');
+        showNotification('复制失败', '无法将截图复制到剪贴板');
+      }
+    });
   } else if (result.type === "error") {
     console.error('错误:', result.message);
-    chrome.notifications.create({
-      type: 'basic',
-      iconUrl: 'icon.png',
-      title: '操作失败',
-      message: result.message
-    });
+    showNotification('操作失败', result.message);
   }
 }
+
+function copyScreenshotToClipboard(dataUrl, tabId) {
+  chrome.tabs.sendMessage(tabId, {action: "copyScreenshot", dataUrl: dataUrl}, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('发送消息时出错:', chrome.runtime.lastError);
+      showNotification('复制失败', '无法将截图复制到剪贴板');
+    } else if (response && response.success) {
+      console.log('截图已复制到剪贴板');
+      showNotification('截图已复制', '视频截图已成功复制到剪贴板');
+    } else {
+      console.error('复制截图到剪贴板失败');
+      showNotification('复制失败', '无法将截图复制到剪贴板');
+    }
+  });
+}
+
+function showNotification(title, message) {
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: 'icon.png',
+    title: title,
+    message: message
+  });
+}
+
+// ... 保留其他现有代码 ...
