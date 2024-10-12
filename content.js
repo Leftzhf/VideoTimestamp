@@ -294,14 +294,62 @@ function copyScreenshotToClipboard(dataUrl) {
       const canvas = document.createElement('canvas');
       canvas.width = img.width;
       canvas.height = img.height;
-      canvas.getContext('2d').drawImage(img, 0, 0);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      
       canvas.toBlob(blob => {
-        navigator.clipboard.write([
-          new ClipboardItem({'image/png': blob})
-        ]).then(resolve).catch(reject);
+        const item = new ClipboardItem({ 'image/png': blob });
+        navigator.clipboard.write([item]).then(() => {
+          console.log('截图已成功复制到剪贴板');
+          resolve();
+        }).catch(error => {
+          console.error('复制截图到剪贴板失败:', error);
+          if (error.name === 'NotAllowedError' && error.message.includes('Document is not focused')) {
+            // 当出现特定错误时，将图片转换为 base64 文本并复制
+            const base64 = canvas.toDataURL('image/png');
+            copyTextToClipboard(base64)
+              .then(() => {
+                console.log('截图已作为 base64 文本复制到剪贴板');
+                resolve();
+              })
+              .catch(textError => {
+                console.error('复制 base64 文本到剪贴板失败:', textError);
+                reject(textError);
+              });
+          } else {
+            reject(error);
+          }
+        });
       }, 'image/png');
     };
-    img.onerror = reject;
+    img.onerror = (error) => {
+      console.error('加载图片失败:', error);
+      reject(error);
+    };
     img.src = dataUrl;
+  });
+}
+
+function copyTextToClipboard(text) {
+  return new Promise((resolve, reject) => {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";  // Avoid scrolling to bottom
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+
+    try {
+      const successful = document.execCommand('copy');
+      if (successful) {
+        resolve();
+      } else {
+        reject(new Error('复制失败'));
+      }
+    } catch (err) {
+      reject(err);
+    }
+
+    document.body.removeChild(textArea);
   });
 }
