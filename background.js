@@ -141,24 +141,43 @@ function sendSeekMessage(tabId, timestamp, url, sourceTabId = null) {
 }
 
 function isSimilarVideoUrl(url1, url2) {
-  const parsedUrl1 = new URL(url1);
-  const parsedUrl2 = new URL(url2);
-  
-  if (parsedUrl1.hostname.includes('pan.baidu.com') && parsedUrl2.hostname.includes('pan.baidu.com')) {
-    // 对于百度网盘，我们只比较 path 参数
-    return parsedUrl1.searchParams.get('path') === parsedUrl2.searchParams.get('path');
-  } else if (parsedUrl1.hostname.includes('bilibili.com') && parsedUrl2.hostname.includes('bilibili.com')) {
-    // 对于B站，我们比较视频ID
-    const biliRegex = /\/video\/([^/?]+)/;
-    const match1 = parsedUrl1.pathname.match(biliRegex);
-    const match2 = parsedUrl2.pathname.match(biliRegex);
-    return match1 && match2 && match1[1] === match2[1];
-  } else if (parsedUrl1.hostname.includes('youtube.com') && parsedUrl2.hostname.includes('youtube.com')) {
-    return parsedUrl1.searchParams.get('v') === parsedUrl2.searchParams.get('v');
-  } else if (parsedUrl1.hostname.includes('vimeo.com') && parsedUrl2.hostname.includes('vimeo.com')) {
-    return parsedUrl1.pathname === parsedUrl2.pathname;
+  console.log('Comparing URLs:', url1, url2);
+  try {
+    const parsedUrl1 = new URL(url1);
+    const parsedUrl2 = new URL(url2);
+
+    console.log('Parsed URLs:', parsedUrl1, parsedUrl2);
+
+    // 比较主机名和路径
+    if (parsedUrl1.hostname !== parsedUrl2.hostname || parsedUrl1.pathname !== parsedUrl2.pathname) {
+      return false;
+    }
+
+    // 对于 B 站，比较视频 ID 和分 P
+    if (parsedUrl1.hostname.includes('bilibili.com')) {
+      const bvid1 = parsedUrl1.pathname.split('/').pop();
+      const bvid2 = parsedUrl2.pathname.split('/').pop();
+      const p1 = parsedUrl1.searchParams.get('p') || '1';
+      const p2 = parsedUrl2.searchParams.get('p') || '1';
+
+      return bvid1 === bvid2 && p1 === p2;
+    }
+
+    // 对于百度网盘，比较文件路径
+    if (parsedUrl1.hostname.includes('pan.baidu.com')) {
+      const path1 = parsedUrl1.searchParams.get('path');
+      const path2 = parsedUrl2.searchParams.get('path');
+      return path1 === path2;
+    }
+
+    // 对于其他网站，可以添加特定的比较逻辑
+
+    return true;
+  } catch (error) {
+    console.error('Error in isSimilarVideoUrl:', error);
+    console.error('Invalid URL:', url1, 'or', url2);
+    return false;
   }
-  return false;
 }
 
 // 保留原有的其他功能代码...

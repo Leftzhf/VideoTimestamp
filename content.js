@@ -14,13 +14,29 @@ const platformHandlers = {
       return video;
     },
     generateTimestampLink: (video, timestamp, currentUrl) => {
+      const currentP = currentUrl.searchParams.get('p') || '1';
       currentUrl.searchParams.set('t', Math.floor(video.currentTime));
+      currentUrl.searchParams.set('p', currentP);
       return `[${timestamp}](${currentUrl.toString()})`;
     },
-    seekToTimestamp: (video, targetTime) => {
-      video.currentTime = targetTime;
-      // 阻止默认的页面跳转
-      history.pushState(null, '', window.location.href);
+    seekToTimestamp: (video, targetTime, url) => {
+      const currentUrl = new URL(window.location.href);
+      const targetUrl = new URL(url);
+
+      // 比较重要参数：视频 ID (bvid) 和分 P (p)
+      const currentBvid = currentUrl.pathname.split('/').pop();
+      const targetBvid = targetUrl.pathname.split('/').pop();
+      const currentP = currentUrl.searchParams.get('p') || '1';
+      const targetP = targetUrl.searchParams.get('p') || '1';
+
+      if (currentBvid === targetBvid && currentP === targetP) {
+        video.currentTime = targetTime;
+        // 更新 URL，但保留原有的其他参数
+        currentUrl.searchParams.set('t', Math.floor(targetTime));
+        history.pushState(null, '', currentUrl.toString());
+      } else {
+        window.open(url, '_blank');
+      }
     }
   },
   baiduPan: {
@@ -141,7 +157,7 @@ function copyToClipboard(text) {
   document.body.removeChild(textArea);
 }
 
-function seekToTimestamp(timestamp) {
+function seekToTimestamp(timestamp, url) {
   if (isProcessingSeek) return false;
   isProcessingSeek = true;
 
@@ -156,14 +172,13 @@ function seekToTimestamp(timestamp) {
     const targetTime = parseInt(timestamp);
     const handler = getPlatformHandler();
     if (handler) {
-      handler.seekToTimestamp(video, targetTime);
+      handler.seekToTimestamp(video, targetTime, url);
     } else {
       video.currentTime = targetTime;
+      history.pushState(null, '', url);
     }
     lastSeekTimestamp = targetTime;
     console.log('视频已跳转到时间戳:', timestamp);
-    // 阻止默认的页面跳转
-    history.pushState(null, '', window.location.href);
   }
   isProcessingSeek = false;
   return true;
@@ -193,7 +208,7 @@ function checkUrlAndSeek() {
   }
 
   if (timestamp && timestamp !== lastSeekTimestamp) {
-    seekToTimestamp(timestamp);
+    seekToTimestamp(timestamp, window.location.href);
   }
 }
 
@@ -265,9 +280,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     showPageNotification(`(${timestamp}) 内容已复制到剪贴板`);
     sendResponse({success: true});
   } else if (request.action === "seekToTimestamp") {
-    const success = seekToTimestamp(request.timestamp);
+    const success = seekToTimestamp(request.timestamp, request.url);
     if (success) {
-      history.pushState(null, '', request.url);
       showPageNotification('已跳转到指定时间戳');
     }
     sendResponse({success: success});
